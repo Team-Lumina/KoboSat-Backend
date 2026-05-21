@@ -1,0 +1,38 @@
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from db.database import Base, engine
+from routes import health, mock
+
+# Create all database tables
+Base.metadata.create_all(bind=engine)
+
+app = FastAPI(
+    title="KoboSats API",
+    description="Offline-first Bitcoin financial tool for Nigeria's informal earners",
+    version="1.0.0"
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:5173",    
+        "http://localhost:3000",
+        "https://kobosats.netlify.app"
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+app.include_router(health.router, prefix="/api")
+app.include_router(mock.router, prefix="/api/v1")
+
+@app.get("/")
+def root():
+    return {
+        "app": "KoboSats",
+        "version": "1.0.0",
+        "status": "running",
+        "docs": "/docs"
+    }
