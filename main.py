@@ -1,38 +1,66 @@
+import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from db.database import Base, engine
-from routes import health, mock
+from contextlib import asynccontextmanager
+from config import settings
 
-# Create all database tables
-Base.metadata.create_all(bind=engine)
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+)
+logger = logging.getLogger(__name__)
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+
+    print("🚀 KoboSats starting up...")
+    
+    from db.database import init_db
+    init_db()
+    print("✅ Database ready")
+
+    from services.breez import breez_service
+    await breez_service.connect()
+
+    yield
+
+    # Shutdown
+    print("🛑 KoboSats shutting down...")
+    from services.breez import breez_service
+    await breez_service.disconnect()
+
 
 app = FastAPI(
     title="KoboSats API",
-    description="Offline-first Bitcoin financial tool for Nigeria's informal earners",
-    version="1.0.0"
+    description="Bitcoin Lightning payments for Nigerian market traders",
+    version="1.0.0",
+    lifespan=lifespan
 )
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:5173",    
-        "http://localhost:3000",
-        "https://kobosats.netlify.app"
+        "http://localhost:4173",
+        settings.FRONTEND_URL,
     ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+from routes.health import router as health_router
+app.include_router(health_router, prefix="/api", tags=["Health"])
 
-app.include_router(health.router, prefix="/api")
-app.include_router(mock.router, prefix="/api/v1")
+# uncomment when ready:
+# from routes.traders import router as traders_router
+# app.include_router(traders_router, prefix="/api/v1", tags=["Traders"])
 
-@app.get("/")
-def root():
-    return {
-        "app": "KoboSats",
-        "version": "1.0.0",
-        "status": "running",
-        "docs": "/docs"
-    }
+# from routes.lightning import router as lightning_router
+# app.include_router(lightning_router, prefix="/api/v1", tags=["Lightning"])
+
+# from routes.debts import router as debts_router
+# app.include_router(debts_router, prefix="/api/v1", tags=["Debts"])
+
+# from routes.ussd import router as ussd_router
+# app.include_router(ussd_router, prefix="/api/v1", tags=["USSD"])

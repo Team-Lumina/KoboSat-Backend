@@ -1,7 +1,26 @@
+# Environment variables
 venv/
+.venv/
+env/
+.env
+
+# Breez SDK node data
+.breez_data/
+
+# Python cache files
 __pycache__/
 *.pyc
-.env
+*.pyo
+
+# Database files
 *.db
+*.sqlite3
+
+# OS generated files
 .DS_Store
+Thumbs.db
 *.log
+
+# IDE
+.vscode/
+.idea/

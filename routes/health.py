@@ -3,5 +3,9 @@ from fastapi import APIRouter
 router = APIRouter()
 
 @router.get("/health")
-def health_check():
-    return {"status": "ok", "app": "KoboSats Backend"}
+async def health_check():
+    return {
+        "status": "ok",
+        "app": "KoboSats",
+        "version": "1.0.0"
+    }
