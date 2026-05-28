@@ -21,17 +21,25 @@ class BreezEventListener(breez_sdk_spark.EventListener if BREEZ_AVAILABLE else o
         try:
             if isinstance(event, breez_sdk_spark.SdkEvent.PAYMENT_SUCCEEDED):
                 details = event.details
+                print(f"   Payment details fields: {[x for x in dir(details) if not x.startswith('_')]}")
+
                 payment_hash =""
                 amount_sats = 0
 
                 if hasattr(details, 'id'):
                     payment_hash = details.id
+                elif hasattr(details, 'payment_hash'):
+                    payment_hash = details.payment_hash
+
+
                 if hasattr(details, 'amount_sat'):
                     amount_sats = details.amount_sat
+                elif hasattr(details, 'amount_sats'):
+                    amount_sats = details.amount_sats
                 elif hasattr(details, 'amount_msat'):
                     amount_sats = details.amount_msat / 1000
 
-                print(f"💰 Payment received! hash={payment_hash[:16]}... sats={amount_sats}")
+                print(f"💰 Payment received! hash={payment_hash[:16] if payment_hash else 'unknown'}... sats={amount_sats}")
 
                 try:
                     from services.payment_handler import handle_payment_received

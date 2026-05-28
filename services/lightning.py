@@ -1,7 +1,4 @@
-"""
-services/lightning.py — Create invoices and fetch balance.
-Uses the Breez Spark SDK (breez_sdk_spark v0.15.0).
-"""
+
 from services.breez import breez_service, BREEZ_AVAILABLE
 
 if BREEZ_AVAILABLE:
@@ -9,12 +6,7 @@ if BREEZ_AVAILABLE:
 
 
 async def create_invoice(amount_sats: int, description: str) -> dict:
-    """
-    Create a Lightning invoice for amount_sats satoshis.
 
-    Returns:
-        { "invoice": "lnbc...", "payment_hash": "abc123..." }
-    """
     sdk = breez_service.get_sdk()
 
     if not sdk or not BREEZ_AVAILABLE:
@@ -24,28 +16,28 @@ async def create_invoice(amount_sats: int, description: str) -> dict:
         )
 
     try:
-        # Spark SDK receive payment request
-        request = breez_sdk_spark.ReceivePaymentRequest(
-            amount=breez_sdk_spark.Amount(
-                sat=amount_sats,
-            ),
+        payment_method = breez_sdk_spark.ReceivePaymentMethod.BOLT11_INVOICE(
             description=description,
+            amount_sats=amount_sats,
+            expiry_secs=3600,   # invoice expires in 1 hour
+            payment_hash=None,
+        )
+
+        request = breez_sdk_spark.ReceivePaymentRequest(
+            payment_method=payment_method,
         )
 
         response = await sdk.receive_payment(request)
 
-        # Extract invoice from response
         invoice = ""
         payment_hash = ""
 
-        if hasattr(response, 'invoice'):
-            invoice = response.invoice
-        if hasattr(response, 'payment_hash'):
-            payment_hash = response.payment_hash
+        if hasattr(response, 'payment_request'):
+            invoice = response.payment_request
 
-        # Some versions nest it differently
-        if not invoice and hasattr(response, 'destination'):
-            invoice = response.destination
+        payment_hash = invoice[:64] if invoice else ""
+
+        print(f"   Invoice: {invoice[:40]}..." if invoice else "   ⚠️  No invoice in response")
 
         return {
             "invoice": invoice,
@@ -55,14 +47,8 @@ async def create_invoice(amount_sats: int, description: str) -> dict:
     except Exception as e:
         raise RuntimeError(f"Failed to create invoice: {e}")
 
-
 async def get_balance() -> dict:
-    """
-    Fetch current wallet balance from Spark SDK.
 
-    Returns:
-        { "balance_sats": 47820, "pending_sats": 0 }
-    """
     sdk = breez_service.get_sdk()
 
     if not sdk or not BREEZ_AVAILABLE:
@@ -73,16 +59,18 @@ async def get_balance() -> dict:
             breez_sdk_spark.GetInfoRequest(ensure_synced=True)
         )
 
+        print(f"   Info fields: {[x for x in dir(info) if not x.startswith('_')]}")
+
         balance_sats = 0
         pending_sats = 0
 
-        if hasattr(info, 'balance_sat'):
-            balance_sats = info.balance_sat
-        elif hasattr(info, 'wallet_info') and hasattr(info.wallet_info, 'balance_sat'):
-            balance_sats = info.wallet_info.balance_sat
+        if hasattr(info, 'balance_sats'):
+            balance_sats = info.balance_sats
 
         if hasattr(info, 'pending_receive_sat'):
             pending_sats = info.pending_receive_sat
+        elif hasattr(info, 'pending_receive_sats'):
+            pending_sats = info.pending_receive_sats
 
         return {
             "balance_sats": balance_sats,
@@ -94,9 +82,7 @@ async def get_balance() -> dict:
 
 
 async def list_payments(limit: int = 20) -> list:
-    """
-    Fetch recent received payments from Spark SDK.
-    """
+
     sdk = breez_service.get_sdk()
 
     if not sdk or not BREEZ_AVAILABLE:
@@ -116,7 +102,7 @@ async def list_payments(limit: int = 20) -> list:
                 "amount_sats": p.amount_sat if hasattr(p, 'amount_sat') else 0,
                 "description": p.description if hasattr(p, 'description') else "",
                 "status": str(p.status) if hasattr(p, 'status') else "",
-                "timestamp": p.timestamp if hasattr(p, 'timestamp') else 0,
+
             }
             for p in payments
         ]

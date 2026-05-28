@@ -55,8 +55,8 @@ app.include_router(health_router, prefix="/api", tags=["Health"])
 from routes.traders import router as traders_router
 app.include_router(traders_router, prefix="/api/v1", tags=["Traders"])
 
-# from routes.lightning import router as lightning_router
-# app.include_router(lightning_router, prefix="/api/v1", tags=["Lightning"])
+from routes.lightning import router as lightning_router
+app.include_router(lightning_router, prefix="/api/v1", tags=["Lightning"])
 
 # from routes.debts import router as debts_router
 # app.include_router(debts_router, prefix="/api/v1", tags=["Debts"])

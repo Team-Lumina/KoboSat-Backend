@@ -1,18 +1,12 @@
-import africastalking
+import httpx
 from config import settings
 
-try:
-    africastalking.initialize(
-        username=settings.AT_USERNAME,
-        api_key=settings.AT_API_KEY,
-    )
-    sms_client = africastalking.SMS
-    AT_AVAILABLE = True
+AT_AVAILABLE = bool(settings.AT_API_KEY)
+
+if AT_AVAILABLE:
     print("✅ Africa's Talking SMS ready")
-except Exception as e:
-    sms_client = None
-    AT_AVAILABLE = False
-    print(f"⚠️  Africa's Talking init failed: {e}")
+else:
+    print("⚠️  AT_API_KEY not set — SMS disabled")
 
 def normalise_phone(phone: str) -> str:
 
@@ -33,33 +27,52 @@ def normalise_phone(phone: str) -> str:
     return phone
 
 async def send_sms(phone: str, message: str) -> bool:
-    if not AT_AVAILABLE or not sms_client:
-        # Print to console so you can see what would have been sent
-        print(f"[SMS NOT SENT — AT unavailable]")
-        print(f"  To:      {phone}")
+    
+    normalised = normalise_phone(phone)
+
+    if not settings.AT_API_KEY:
+        print(f"[SMS NOT SENT — no API key]")
+        print(f"  To:      {normalised}")
         print(f"  Message: {message}")
         return False
 
-    normalised = normalise_phone(phone)
-
     try:
-        response = sms_client.send(
-            message=message,
-            recipients=[normalised],
-        )
+        import httpx
 
-        recipients = response.get("SMSMessageData", {}).get("Recipients", [])
-        if recipients:
-            status = recipients[0].get("status", "")
-            if status == "Success":
+        if settings.AT_USERNAME == "sandbox":
+            url = "https://api.sandbox.africastalking.com/version1/messaging"
+        else:
+            url = "https://api.africastalking.com/version1/messaging"
+
+        headers = {
+            "apiKey": settings.AT_API_KEY,
+            "Content-Type": "application/x-www-form-urlencoded",
+            "Accept": "application/json",
+        }
+
+        data = {
+            "username": settings.AT_USERNAME,
+            "to": normalised,
+            "message": message,
+        }
+
+        async with httpx.AsyncClient(timeout=10.0, verify=False) as client:
+            response = await client.post(url, headers=headers, data=data)
+            response.raise_for_status()
+            result = response.json()
+
+            recipients = (
+                result
+                .get("SMSMessageData", {})
+                .get("Recipients", [])
+            )
+
+            if recipients and recipients[0].get("status") == "Success":
                 print(f"📱 SMS sent to {normalised}")
                 return True
             else:
-                print(f"⚠️  SMS failed to {normalised}: {status}")
+                print(f"⚠️  SMS failed to {normalised}: {result}")
                 return False
-        else:
-            print(f"⚠️  SMS response had no recipients: {response}")
-            return False
 
     except Exception as e:
         print(f"⚠️  SMS exception for {normalised}: {e}")
