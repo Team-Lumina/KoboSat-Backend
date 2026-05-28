@@ -61,5 +61,5 @@ app.include_router(lightning_router, prefix="/api/v1", tags=["Lightning"])
 from routes.debts import router as debts_router
 app.include_router(debts_router, prefix="/api/v1", tags=["Debts"])
 
-# from routes.ussd import router as ussd_router
-# app.include_router(ussd_router, prefix="/api/v1", tags=["USSD"])
+from routes.ussd import router as ussd_router
+app.include_router(ussd_router, prefix="/api/v1", tags=["USSD"])
