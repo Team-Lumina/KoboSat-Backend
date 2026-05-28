@@ -52,9 +52,8 @@ app.add_middleware(
 from routes.health import router as health_router
 app.include_router(health_router, prefix="/api", tags=["Health"])
 
-# uncomment when ready:
-# from routes.traders import router as traders_router
-# app.include_router(traders_router, prefix="/api/v1", tags=["Traders"])
+from routes.traders import router as traders_router
+app.include_router(traders_router, prefix="/api/v1", tags=["Traders"])
 
 # from routes.lightning import router as lightning_router
 # app.include_router(lightning_router, prefix="/api/v1", tags=["Lightning"])
