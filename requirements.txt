@@ -2,7 +2,6 @@ africastalking==2.0.2
 annotated-doc==0.0.4
 annotated-types==0.7.0
 anyio==4.13.0
-breez_sdk==0.8.0
 breez_sdk_spark==0.15.0
 certifi==2026.5.20
 charset-normalizer==3.4.7
