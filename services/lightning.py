@@ -1,78 +1,126 @@
-import logging
-from services.breez import get_sdk
-import breez_sdk_spark as breez
+"""
+services/lightning.py — Create invoices and fetch balance.
+Uses the Breez Spark SDK (breez_sdk_spark v0.15.0).
+"""
+from services.breez import breez_service, BREEZ_AVAILABLE
 
-logger = logging.getLogger(__name__)
+if BREEZ_AVAILABLE:
+    import breez_sdk_spark
 
 
-async def create_lightning_invoice(
-    amount_sats: int,
-    description: str,
-    phone_number: str
-) -> dict:
+async def create_invoice(amount_sats: int, description: str) -> dict:
     """
-    Creates a Lightning invoice for the trader to receive payment.
-    Returns the invoice string and amount.
-    """
-    try:
-        sdk = await get_sdk()
+    Create a Lightning invoice for amount_sats satoshis.
 
-        # Receive via Lightning invoice
-        receive_request = breez.ReceiveLightningPaymentRequest(
-            amount_msats=amount_sats * 1000,  # Breez uses millisatoshis
-            description=description
+    Returns:
+        { "invoice": "lnbc...", "payment_hash": "abc123..." }
+    """
+    sdk = breez_service.get_sdk()
+
+    if not sdk or not BREEZ_AVAILABLE:
+        raise RuntimeError(
+            "Breez Spark SDK is not connected. "
+            "Check BREEZ_API_KEY and BREEZ_MNEMONIC in .env"
         )
 
-        response = await sdk.receive_lightning_payment(request=receive_request)
-
-        return {
-            "success": True,
-            "invoice": response.invoice,
-            "amount_sats": amount_sats,
-            "description": description
-        }
-
-    except Exception as error:
-        logger.error(f"Invoice creation error: {error}")
-        raise
-
-
-async def get_wallet_balance() -> dict:
-    """
-    Returns the current wallet balance from Breez SDK.
-    """
     try:
-        sdk = await get_sdk()
-        info = await sdk.get_info()
-
-        balance_sats = info.wallet_info.balance_sat
-
-        return {
-            "success": True,
-            "balance_sats": balance_sats
-        }
-
-    except Exception as error:
-        logger.error(f"Balance fetch error: {error}")
-        raise
-
-
-async def send_lightning_payment(bolt11: str) -> dict:
-    """
-    Sends a Lightning payment. Used for withdrawals.
-    """
-    try:
-        sdk = await get_sdk()
-
-        response = await sdk.send_lightning_payment(
-            request=breez.SendLightningPaymentRequest(invoice=bolt11)
+        # Spark SDK receive payment request
+        request = breez_sdk_spark.ReceivePaymentRequest(
+            amount=breez_sdk_spark.Amount(
+                sat=amount_sats,
+            ),
+            description=description,
         )
 
+        response = await sdk.receive_payment(request)
+
+        # Extract invoice from response
+        invoice = ""
+        payment_hash = ""
+
+        if hasattr(response, 'invoice'):
+            invoice = response.invoice
+        if hasattr(response, 'payment_hash'):
+            payment_hash = response.payment_hash
+
+        # Some versions nest it differently
+        if not invoice and hasattr(response, 'destination'):
+            invoice = response.destination
+
         return {
-            "success": True,
-            "payment_id": response.payment.id if response.payment else None
+            "invoice": invoice,
+            "payment_hash": payment_hash,
         }
 
-    except Exception as error:
-        logger.error(f"Payment send error: {error}")
-        raise
+    except Exception as e:
+        raise RuntimeError(f"Failed to create invoice: {e}")
+
+
+async def get_balance() -> dict:
+    """
+    Fetch current wallet balance from Spark SDK.
+
+    Returns:
+        { "balance_sats": 47820, "pending_sats": 0 }
+    """
+    sdk = breez_service.get_sdk()
+
+    if not sdk or not BREEZ_AVAILABLE:
+        raise RuntimeError("Breez Spark SDK is not connected.")
+
+    try:
+        info = await sdk.get_info(
+            breez_sdk_spark.GetInfoRequest(ensure_synced=True)
+        )
+
+        balance_sats = 0
+        pending_sats = 0
+
+        if hasattr(info, 'balance_sat'):
+            balance_sats = info.balance_sat
+        elif hasattr(info, 'wallet_info') and hasattr(info.wallet_info, 'balance_sat'):
+            balance_sats = info.wallet_info.balance_sat
+
+        if hasattr(info, 'pending_receive_sat'):
+            pending_sats = info.pending_receive_sat
+
+        return {
+            "balance_sats": balance_sats,
+            "pending_sats": pending_sats,
+        }
+
+    except Exception as e:
+        raise RuntimeError(f"Failed to fetch balance: {e}")
+
+
+async def list_payments(limit: int = 20) -> list:
+    """
+    Fetch recent received payments from Spark SDK.
+    """
+    sdk = breez_service.get_sdk()
+
+    if not sdk or not BREEZ_AVAILABLE:
+        return []
+
+    try:
+        request = breez_sdk_spark.ListPaymentsRequest(
+            limit=limit,
+        )
+        response = await sdk.list_payments(request)
+
+        payments = response.payments if hasattr(response, 'payments') else []
+
+        return [
+            {
+                "payment_hash": p.id if hasattr(p, 'id') else "",
+                "amount_sats": p.amount_sat if hasattr(p, 'amount_sat') else 0,
+                "description": p.description if hasattr(p, 'description') else "",
+                "status": str(p.status) if hasattr(p, 'status') else "",
+                "timestamp": p.timestamp if hasattr(p, 'timestamp') else 0,
+            }
+            for p in payments
+        ]
+
+    except Exception as e:
+        print(f"⚠️  Could not list payments: {e}")
+        return []
