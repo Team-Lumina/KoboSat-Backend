@@ -40,7 +40,7 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "https://kobosat.netlify.app/", 
+        "https://kobosat.netlify.app", 
         "https://kobosat-backend.onrender.com",
         settings.FRONTEND_URL,
     ],
