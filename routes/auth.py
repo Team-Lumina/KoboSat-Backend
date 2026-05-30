@@ -45,7 +45,7 @@ async def send_otp(req: SendOTPRequest, db: Session = Depends(get_db)):
         "phone_number": phone,
 
         # Only expose in dev so frontend can display it — REMOVE in production
-        "dev_code": code if not sms_sent else None,
+        "dev_code": code if True else None,
     }
 
 
