@@ -63,3 +63,6 @@ app.include_router(debts_router, prefix="/api/v1", tags=["Debts"])
 
 from routes.ussd import router as ussd_router
 app.include_router(ussd_router, prefix="/api/v1", tags=["USSD"])
+
+from routes.auth import router as auth_router
+app.include_router(auth_router, prefix="/api/v1", tags=["Auth"])
