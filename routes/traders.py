@@ -2,6 +2,7 @@ from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from typing import Optional
+from services.nostr_service import generate_keypair  # ← ADD THIS BACK
 
 from db.database import get_db
 from models.trader import Trader
