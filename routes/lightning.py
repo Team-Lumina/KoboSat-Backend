@@ -9,6 +9,8 @@ from services.lightning import (
     create_invoice,
     get_balance as fetch_balance,
     list_payments,
+    prepare_send,
+    execute_send,
 )
 from services.coingecko import get_btc_ngn_rate
 from services.conversion import ngn_to_sats, sats_to_ngn
@@ -254,4 +256,170 @@ async def get_single_transaction(
         ),
         "created_at": tx.created_at.isoformat() if tx.created_at else None,
         "paid_at": tx.paid_at.isoformat() if tx.paid_at else None,
+    }
+
+
+_prepare_cache: dict = {}
+
+
+class PrepareRequest(BaseModel):
+    phone_number: str
+    invoice: str
+
+
+class ConfirmSendRequest(BaseModel):
+    phone_number: str
+    invoice: str
+
+
+@router.post("/lightning/prepare-send")
+async def prepare_send_payment(
+    req: PrepareRequest,
+    db: Session = Depends(get_db),
+):
+
+    phone = validate_phone(req.phone_number)
+    if not phone:
+        raise HTTPException(status_code=400, detail="Invalid phone number")
+
+    invoice = req.invoice.strip().lower()
+    if not invoice.startswith("lnbc") and not invoice.startswith("lntb"):
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid Lightning invoice. Must start with lnbc or lntb",
+        )
+
+    trader = db.query(Trader).filter(
+        Trader.phone_number == phone
+    ).first()
+
+    if not trader:
+        raise HTTPException(status_code=404, detail="Trader not found")
+
+    try:
+        result = await prepare_send(invoice)
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+
+    amount_sats = result["amount_sats"]
+    fee_sats = result["fee_sats"]
+    total_needed = amount_sats + fee_sats
+
+    if trader.balance_sats < total_needed:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Insufficient balance. "
+                f"Need {total_needed:,} sats, "
+                f"have {int(trader.balance_sats):,} sats."
+            ),
+        )
+
+    _prepare_cache[phone] = {
+        "prepare_response": result["prepare_response"],
+        "invoice": invoice,
+        "amount_sats": amount_sats,
+        "fee_sats": fee_sats,
+    }
+
+    try:
+        rate = await get_btc_ngn_rate()
+    except Exception:
+        rate = 150_000_000
+
+    amount_ngn = sats_to_ngn(amount_sats, rate)
+    fee_ngn = sats_to_ngn(fee_sats, rate)
+
+    return {
+        "amount_sats": amount_sats,
+        "amount_ngn": round(amount_ngn, 2),
+        "fee_sats": fee_sats,
+        "fee_ngn": round(fee_ngn, 2),
+        "description": result["description"],
+        "ready_to_send": True,
+    }
+
+
+@router.post("/lightning/send")
+async def send_payment(
+    req: ConfirmSendRequest,
+    db: Session = Depends(get_db),
+):
+    """
+    Step 2 — Execute the payment after user confirms.
+
+    Must call prepare-send first.
+    Called by Send.jsx when user taps Confirm Send.
+    """
+    phone = validate_phone(req.phone_number)
+    if not phone:
+        raise HTTPException(status_code=400, detail="Invalid phone number")
+
+    trader = db.query(Trader).filter(
+        Trader.phone_number == phone
+    ).first()
+
+    if not trader:
+        raise HTTPException(status_code=404, detail="Trader not found")
+
+    cached = _prepare_cache.get(phone)
+    if not cached:
+        raise HTTPException(
+            status_code=400,
+            detail="No prepared payment found. Please scan the invoice again.",
+        )
+
+    del _prepare_cache[phone]
+
+    try:
+        result = await execute_send(cached["prepare_response"])
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+
+    try:
+        rate = await get_btc_ngn_rate()
+    except Exception:
+        rate = 150_000_000
+
+    amount_sats = cached["amount_sats"]
+    fee_sats = cached["fee_sats"]
+    amount_ngn = sats_to_ngn(amount_sats, rate)
+
+    trader.balance_sats = max(0, trader.balance_sats - amount_sats - fee_sats)
+    db.commit()
+
+    tx = Transaction(
+        trader_phone=phone,
+        amount_sats=float(amount_sats),
+        amount_ngn=amount_ngn,
+        btc_ngn_rate=rate,
+        breez_invoice_hash=result["payment_hash"],
+        lightning_invoice=cached["invoice"],
+        status="paid",
+        paid_at=datetime.utcnow(),
+    )
+    db.add(tx)
+    db.commit()
+
+    print(f"💸 Payment sent: {phone} sent {amount_sats:,} sats")
+
+    try:
+        from services.sms import send_sms
+        await send_sms(
+            phone,
+            f"KoboSats: Payment sent!\n"
+            f"Amount: \u20a6{amount_ngn:,.0f} ({amount_sats:,} sats)\n"
+            f"Fee: {fee_sats} sats\n"
+            f"Your balance has been updated.",
+        )
+    except Exception as e:
+        print(f"⚠️  SMS failed: {e}")
+
+    return {
+        "message": "Payment sent successfully",
+        "payment_hash": result["payment_hash"],
+        "amount_sats": amount_sats,
+        "amount_ngn": round(amount_ngn, 2),
+        "fee_sats": fee_sats,
+        "status": "paid",
     }

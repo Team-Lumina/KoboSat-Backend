@@ -110,3 +110,85 @@ async def list_payments(limit: int = 20) -> list:
     except Exception as e:
         print(f"⚠️  Could not list payments: {e}")
         return []
+    
+
+async def prepare_send(invoice: str) -> dict:
+
+    sdk = breez_service.get_sdk()
+
+    if not sdk or not BREEZ_AVAILABLE:
+        raise RuntimeError("Breez Spark SDK is not connected.")
+
+    try:
+
+        prepare_req = breez_sdk_spark.PrepareSendPaymentRequest(
+            payment_request=invoice,
+        )
+
+        prepare_response = await sdk.prepare_send_payment(prepare_req)
+
+        print(f"   Prepare response fields: {[x for x in dir(prepare_response) if not x.startswith('_')]}")
+        print(f"   Prepare response: {prepare_response}")
+
+        amount_sats = 0
+        fee_sats = 0
+        description = ""
+
+        if hasattr(prepare_response, 'amount_sat'):
+            amount_sats = prepare_response.amount_sat
+        elif hasattr(prepare_response, 'amount_sats'):
+            amount_sats = prepare_response.amount_sats
+
+        if hasattr(prepare_response, 'fee_sat'):
+            fee_sats = prepare_response.fee_sat
+        elif hasattr(prepare_response, 'fee_sats'):
+            fee_sats = prepare_response.fee_sats
+
+        if hasattr(prepare_response, 'description'):
+            description = prepare_response.description or ""
+
+        return {
+            "amount_sats": amount_sats,
+            "fee_sats": fee_sats,
+            "description": description,
+            "prepare_response": prepare_response,
+        }
+
+    except Exception as e:
+        raise RuntimeError(f"Failed to prepare payment: {e}")
+
+
+async def execute_send(prepare_response) -> dict:
+
+    sdk = breez_service.get_sdk()
+
+    if not sdk or not BREEZ_AVAILABLE:
+        raise RuntimeError("Breez Spark SDK is not connected.")
+
+    try:
+        send_req = breez_sdk_spark.SendPaymentRequest(
+            prepare_response=prepare_response,
+        )
+
+        response = await sdk.send_payment(send_req)
+
+        print(f"   Send response fields: {[x for x in dir(response) if not x.startswith('_')]}")
+        print(f"   Send response: {response}")
+
+        payment_hash = ""
+        fee_sats = 0
+
+        if hasattr(response, 'payment'):
+            p = response.payment
+            if hasattr(p, 'id'):
+                payment_hash = p.id
+            if hasattr(p, 'fee_sat'):
+                fee_sats = p.fee_sat
+
+        return {
+            "payment_hash": payment_hash,
+            "fee_sats": fee_sats,
+        }
+
+    except Exception as e:
+        raise RuntimeError(f"Payment failed: {e}")
