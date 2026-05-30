@@ -5,8 +5,8 @@ from typing import Optional
 
 from db.database import get_db
 from models.trader import Trader
-from services.nostr_service import generate_keypair
 from utils.validators import validate_phone, validate_language
+from utils.auth import get_current_user
 
 router = APIRouter()
 
@@ -79,6 +79,7 @@ async def register_trader(
 @router.patch("/traders/language")
 async def update_language(
     req: LanguageUpdateRequest,
+    current_phone: str = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     phone = validate_phone(req.phone_number)
@@ -118,6 +119,7 @@ async def update_language(
 @router.get("/traders/{phone}")
 async def get_trader(
     phone: str,
+    current_phone: str = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
 
