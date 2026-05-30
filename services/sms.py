@@ -1,5 +1,32 @@
 import httpx
+import random
+import time
 from config import settings
+
+_otp_store: dict[str, dict] = {}
+
+def generate_otp(phone: str) -> str:
+    """Generate a 6-digit OTP, store it, and return it."""
+    code = str(random.randint(100000, 999999))
+    _otp_store[phone] = {
+        "code": code,
+        "expires": time.time() + 300,  # 5 minutes
+    }
+    print(f"[OTP] Generated for {phone}: {code}")  # remove in production
+    return code
+
+def verify_otp(phone: str, code: str) -> bool:
+    """Return True if the code matches and hasn't expired. Deletes on success."""
+    record = _otp_store.get(phone)
+    if not record:
+        return False
+    if time.time() > record["expires"]:
+        del _otp_store[phone]
+        return False
+    if record["code"] != code:
+        return False
+    del _otp_store[phone]
+    return True
 
 AT_AVAILABLE = bool(settings.AT_API_KEY)
 
